@@ -47,9 +47,18 @@ async function loadAnnouncements() {
 
             container.appendChild(card);
         });
+    
     } catch (error) {
         console.error("Could not load announcements:", error);
+
+        container.innerHTML = `
+            <p style="color: #ff7777;">
+                Failed to load announcements:
+                ${safe(error.message)}
+            </p>
+        `;
     }
+
 }
 
 loadAnnouncements();
