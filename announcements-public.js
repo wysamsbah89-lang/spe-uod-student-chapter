@@ -25,8 +25,8 @@ async function loadAnnouncements() {
     try {
         const snapshot = await getDocs(collection(db, "announcements"));
 
-        snapshot.forEach(document => {
-            const announcement = document.data();
+        snapshot.forEach(item => {
+            const announcement = item.data();
             const card = document.createElement("div");
 
             card.className = "news-card";
