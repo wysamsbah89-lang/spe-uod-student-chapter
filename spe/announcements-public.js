@@ -1,3 +1,4 @@
+
 import { db } from "./admin/firebase.js";
 
 import {
@@ -7,28 +8,48 @@ import {
 
 const container = document.getElementById("announcementList");
 
-async function loadAnnouncements() {
+const safe = value =>
+    String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    }[ch]));
 
+async function loadAnnouncements() {
     if (!container) return;
 
-    container.innerHTML = "";
+    container.replaceChildren();
 
-    const snapshot = await getDocs(collection(db, "announcements"));
+    try {
+        const snapshot = await getDocs(collection(db, "announcements"));
 
-    snapshot.forEach((document) => {
+        snapshot.forEach(document => {
+            const announcement = document.data();
+            const card = document.createElement("div");
 
-        const announcement = document.data();
+            card.className = "news-card";
 
-        container.innerHTML += `
-        <div class="card">
-            <h3>${announcement.title}</h3>
-            <small>${announcement.date}</small>
-            <p>${announcement.description}</p>
-        </div>
-        `;
+            const image = announcement.image
+                ? `<img src="${safe(announcement.image)}" alt="${safe(announcement.title)}" loading="lazy">`
+                : "";
 
-    });
+            card.innerHTML = `
+                <span class="news-type">ANNOUNCEMENT</span>
+                ${image}
+                <div class="news-content">
+                    <span class="news-date">${safe(announcement.date)}</span>
+                    <h3>${safe(announcement.title)}</h3>
+                    <p>${safe(announcement.description)}</p>
+                </div>
+            `;
 
+            container.appendChild(card);
+        });
+    } catch (error) {
+        console.error("Could not load announcements:", error);
+    }
 }
 
 loadAnnouncements();
