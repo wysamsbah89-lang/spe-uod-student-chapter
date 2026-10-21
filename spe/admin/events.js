@@ -16,8 +16,7 @@ const imageInput = document.getElementById("image");
 const preview = document.getElementById("imagePreview");
 const submit = form.querySelector('button[type="submit"]');
 
-// Use the same ImgBB API key as announcements.js
-const IMGBB_KEY = "PASTE_YOUR_IMGBB_API_KEY_HERE";
+const IMGBB_KEY = "0ae53f2c09442ffc12135ae8839d24f5";
 
 let editingId = null;
 let existingImage = "";
