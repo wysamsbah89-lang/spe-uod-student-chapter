@@ -1,3 +1,4 @@
+
 import { db } from "./firebase.js";
 
 import {
@@ -11,110 +12,208 @@ import {
 
 const form = document.getElementById("eventForm");
 const eventList = document.getElementById("eventList");
+const imageInput = document.getElementById("image");
+const preview = document.getElementById("imagePreview");
+const submit = form.querySelector('button[type="submit"]');
+
+// Use the same ImgBB API key as announcements.js
+const IMGBB_KEY = "PASTE_YOUR_IMGBB_API_KEY_HERE";
 
 let editingId = null;
+let existingImage = "";
+let previewURL = null;
 
-async function loadEvents() {
-
-    eventList.innerHTML = "";
-
-    const snapshot = await getDocs(collection(db, "events"));
-
-    snapshot.forEach((document) => {
-
-        const event = document.data();
-
-        eventList.innerHTML += `
-        <tr>
-            <td>${event.title}</td>
-            <td>${event.date}</td>
-            <td>
-            
-                <button class="action-btn editBtn"
-                    data-id="${document.id}"
-                    data-title="${event.title}"
-                    data-date="${event.date}"
-                    data-image="${event.image}"
-                    data-description="${event.description}">
-                    Edit
-                </button>
-
-                <button class="action-btn delete deleteBtn"
-                    data-id="${document.id}">
-                    Delete
-                </button>
-            </td>
-        </tr>
-        `;
-    });
-
+function safe(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
 }
 
-loadEvents();
+function showPreview(url) {
+  if (previewURL) {
+    URL.revokeObjectURL(previewURL);
+    previewURL = null;
+  }
 
-form.addEventListener("submit", async (e) => {
+  if (url) {
+    preview.src = url;
+    preview.hidden = false;
+  } else {
+    preview.hidden = true;
+    preview.removeAttribute("src");
+  }
+}
 
-    e.preventDefault();
+imageInput.addEventListener("change", () => {
+  const file = imageInput.files[0];
 
-    const title = document.getElementById("title").value.trim();
-    const date = document.getElementById("date").value.trim();
-    const image = document.getElementById("image").value.trim();
-    const description = document.getElementById("description").value.trim();
+  if (!file) {
+    showPreview(existingImage);
+    return;
+  }
 
-    if (editingId) {
+  if (!file.type.startsWith("image/")) {
+    alert("Please select an image.");
+    imageInput.value = "";
+    showPreview(existingImage);
+    return;
+  }
 
-        await updateDoc(doc(db, "events", editingId), {
-            title,
-            date,
-            image,
-            description
-        });
-
-        editingId = null;
-
-        form.querySelector("button").textContent = "Add Event";
-
-    } else {
-
-        await addDoc(collection(db, "events"), {
-            title,
-            date,
-            image,
-            description
-        });
-
-        alert("✅ Event added successfully!");
-    }
-
-    form.reset();
-
-    loadEvents();
-
+  previewURL = URL.createObjectURL(file);
+  preview.src = previewURL;
+  preview.hidden = false;
 });
 
-document.addEventListener("click", async (e) => {
+async function uploadImage(file) {
+  const data = new FormData();
+  data.append("image", file);
 
-    if (e.target.classList.contains("deleteBtn")) {
+  const response = await fetch(
+    `https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`,
+    {
+      method: "POST",
+      body: data
+    }
+  );
 
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    throw new Error("Image upload failed");
+  }
+
+  return result.data.url;
+}
+
+function resetForm() {
+  editingId = null;
+  existingImage = "";
+  form.reset();
+  showPreview("");
+  submit.textContent = "Add Event";
+}
+
+async function loadEvents() {
+  eventList.replaceChildren();
+
+  try {
+    const snapshot = await getDocs(collection(db, "events"));
+
+    snapshot.forEach(item => {
+      const event = item.data();
+      const row = document.createElement("tr");
+
+      row.innerHTML = `
+        <td>${safe(event.title)}</td>
+        <td>${safe(event.date)}</td>
+        <td>
+          <button type="button" class="action-btn editBtn">
+            Edit
+          </button>
+          <button type="button" class="action-btn delete deleteBtn">
+            Delete
+          </button>
+        </td>
+      `;
+
+      row.querySelector(".editBtn").onclick = () => {
+        editingId = item.id;
+        existingImage = event.image || "";
+
+        document.getElementById("title").value =
+          event.title || "";
+
+        document.getElementById("date").value =
+          event.date || "";
+
+        document.getElementById("description").value =
+          event.description || "";
+
+        imageInput.value = "";
+        showPreview(existingImage);
+
+        submit.textContent = "Update Event";
+        form.scrollIntoView({ behavior: "smooth" });
+      };
+
+      row.querySelector(".deleteBtn").onclick = async () => {
         if (!confirm("Delete this event?")) return;
 
-        await deleteDoc(doc(db, "events", e.target.dataset.id));
+        try {
+          await deleteDoc(doc(db, "events", item.id));
 
-        loadEvents();
-alert("✅ Event deleted successfully!");
+          if (editingId === item.id) resetForm();
+
+          await loadEvents();
+          alert("Event deleted successfully!");
+        } catch (error) {
+          console.error(error);
+          alert("Could not delete event.");
+        }
+      };
+
+      eventList.appendChild(row);
+    });
+  } catch (error) {
+    console.error(error);
+    alert("Could not load events.");
+  }
+}
+
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const title = document.getElementById("title").value.trim();
+  const date = document.getElementById("date").value.trim();
+  const description =
+    document.getElementById("description").value.trim();
+
+  const file = imageInput.files[0];
+
+  if (!title || !date || !description) {
+    alert("Please fill in all event details.");
+    return;
+  }
+
+  submit.disabled = true;
+  submit.textContent = "Saving...";
+
+  try {
+    let image = existingImage;
+
+    if (file) {
+      image = await uploadImage(file);
     }
 
-    if (e.target.classList.contains("editBtn")) {
+    const data = {
+      title,
+      date,
+      description,
+      image
+    };
 
-        editingId = e.target.dataset.id;
-
-        document.getElementById("title").value = e.target.dataset.title;
-        document.getElementById("date").value = e.target.dataset.date;
-        document.getElementById("image").value = e.target.dataset.image;
-        document.getElementById("description").value = e.target.dataset.description;
-
-        form.querySelector("button").textContent = "Update Event";
-
+    if (editingId) {
+      await updateDoc(doc(db, "events", editingId), data);
+    } else {
+      await addDoc(collection(db, "events"), data);
     }
 
+    resetForm();
+    await loadEvents();
+
+    alert("Event saved successfully!");
+
+  } catch (error) {
+    console.error(error);
+    alert("Failed to save event. Please try again.");
+  } finally {
+    submit.disabled = false;
+    if (!editingId) submit.textContent = "Add Event";
+  }
 });
+
+loadEvents();
